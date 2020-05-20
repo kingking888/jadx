@@ -6,16 +6,17 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import jadx.core.dex.instructions.args.ArgType;
-import jadx.core.dex.nodes.GenericInfo;
+import jadx.core.dex.instructions.args.ArgType.WildcardBound;
+import jadx.core.dex.nodes.GenericTypeParameter;
 import jadx.core.dex.nodes.parser.SignatureParser;
 
 import static jadx.core.dex.instructions.args.ArgType.INT;
 import static jadx.core.dex.instructions.args.ArgType.OBJECT;
 import static jadx.core.dex.instructions.args.ArgType.array;
 import static jadx.core.dex.instructions.args.ArgType.generic;
-import static jadx.core.dex.instructions.args.ArgType.genericInner;
 import static jadx.core.dex.instructions.args.ArgType.genericType;
 import static jadx.core.dex.instructions.args.ArgType.object;
+import static jadx.core.dex.instructions.args.ArgType.outerGeneric;
 import static jadx.core.dex.instructions.args.ArgType.wildcard;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
@@ -45,9 +46,9 @@ class SignatureParserTest {
 		checkType("La<TV;Lb;>;", generic("La;", genericType("V"), object("b")));
 		checkType("La<Lb<Lc;>;>;", generic("La;", generic("Lb;", object("Lc;"))));
 		checkType("La/b/C<Ld/E<Lf/G;>;>;", generic("La/b/C;", generic("Ld/E;", object("Lf/G;"))));
-		checkType("La<TD;>.c;", genericInner(generic("La;", genericType("D")), "c", null));
-		checkType("La<TD;>.c/d;", genericInner(generic("La;", genericType("D")), "c.d", null));
-		checkType("La<Lb;>.c<TV;>;", genericInner(generic("La;", object("Lb;")), "c", new ArgType[] { genericType("V") }));
+		checkType("La<TD;>.c;", outerGeneric(generic("La;", genericType("D")), ArgType.object("c")));
+		checkType("La<TD;>.c/d;", outerGeneric(generic("La;", genericType("D")), ArgType.object("c.d")));
+		checkType("La<Lb;>.c<TV;>;", outerGeneric(generic("La;", object("Lb;")), ArgType.generic("c", genericType("V"))));
 	}
 
 	@Test
@@ -60,10 +61,10 @@ class SignatureParserTest {
 	@Test
 	public void testWildcards() {
 		checkWildcards("*", wildcard());
-		checkWildcards("+Lb;", wildcard(object("b"), 1));
-		checkWildcards("-Lb;", wildcard(object("b"), -1));
-		checkWildcards("+TV;", wildcard(genericType("V"), 1));
-		checkWildcards("-TV;", wildcard(genericType("V"), -1));
+		checkWildcards("+Lb;", wildcard(object("b"), WildcardBound.EXTENDS));
+		checkWildcards("-Lb;", wildcard(object("b"), WildcardBound.SUPER));
+		checkWildcards("+TV;", wildcard(genericType("V"), WildcardBound.EXTENDS));
+		checkWildcards("-TV;", wildcard(genericType("V"), WildcardBound.SUPER));
 
 		checkWildcards("**", wildcard(), wildcard());
 		checkWildcards("*Lb;", wildcard(), object("b"));
@@ -91,12 +92,12 @@ class SignatureParserTest {
 
 	@SuppressWarnings("unchecked")
 	private static void checkGenerics(String g, Object... objs) {
-		List<GenericInfo> genericsList = new SignatureParser(g).consumeGenericMap();
-		List<GenericInfo> expectedList = new ArrayList<>();
+		List<GenericTypeParameter> genericsList = new SignatureParser(g).consumeGenericTypeParameters();
+		List<GenericTypeParameter> expectedList = new ArrayList<>();
 		for (int i = 0; i < objs.length; i += 2) {
 			ArgType generic = genericType((String) objs[i]);
 			List<ArgType> list = (List<ArgType>) objs[i + 1];
-			expectedList.add(new GenericInfo(generic, list));
+			expectedList.add(new GenericTypeParameter(generic, list));
 		}
 		assertThat(genericsList, is(expectedList));
 	}
@@ -116,12 +117,12 @@ class SignatureParserTest {
 		assertThat(argTypes, hasSize(1));
 		ArgType argType = argTypes.get(0);
 		assertThat(argType.getObject().indexOf('/'), is(-1));
-		assertThat(argType, is(genericInner(generic("La/b/C;", genericType("T")), "d.E", (ArgType[]) null)));
+		assertThat(argType, is(outerGeneric(generic("La/b/C;", genericType("T")), object("d.E"))));
 	}
 
 	@Test
 	public void testBadGenericMap() {
-		List<GenericInfo> list = new SignatureParser("<A:Ljava/lang/Object;B").consumeGenericMap();
+		List<GenericTypeParameter> list = new SignatureParser("<A:Ljava/lang/Object;B").consumeGenericTypeParameters();
 		assertThat(list, hasSize(0));
 	}
 }

@@ -4,16 +4,14 @@ import java.util.Objects;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.nodes.InsnNode;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
 public class RegisterArg extends InsnArg implements Named {
-	private static final Logger LOG = LoggerFactory.getLogger(RegisterArg.class);
 	public static final String THIS_ARG_NAME = "this";
+	public static final String SUPER_ARG_NAME = "super";
 
 	protected final int regNum;
 	// not null after SSATransform pass
@@ -38,15 +36,6 @@ public class RegisterArg extends InsnArg implements Named {
 		if (sVar == null) {
 			throw new JadxRuntimeException("Can't change type for register without SSA variable: " + this);
 		}
-		if (contains(AFlag.IMMUTABLE_TYPE)) {
-			if (!type.isTypeKnown()) {
-				throw new JadxRuntimeException("Unknown immutable type '" + type + "' in " + this);
-			}
-			if (!type.equals(newType)) {
-				LOG.warn("JADX WARNING: Can't change immutable type from '{}' to '{}' for {}", type, newType, this);
-				return;
-			}
-		}
 		sVar.setType(newType);
 	}
 
@@ -55,17 +44,30 @@ public class RegisterArg extends InsnArg implements Named {
 		if (sVar != null) {
 			return sVar.getTypeInfo().getType();
 		}
-		LOG.warn("Register type unknown, SSA variable not initialized: r{}", regNum);
-		return type;
+		return ArgType.UNKNOWN;
 	}
 
 	public ArgType getInitType() {
 		return type;
 	}
 
+	@Nullable
+	public ArgType getImmutableType() {
+		if (contains(AFlag.IMMUTABLE_TYPE)) {
+			return type;
+		}
+		if (sVar != null) {
+			return sVar.getImmutableType();
+		}
+		return null;
+	}
+
 	@Override
 	public boolean isTypeImmutable() {
-		return contains(AFlag.IMMUTABLE_TYPE) || (sVar != null && sVar.contains(AFlag.IMMUTABLE_TYPE));
+		if (contains(AFlag.IMMUTABLE_TYPE)) {
+			return true;
+		}
+		return sVar != null && sVar.isTypeImmutable();
 	}
 
 	public SSAVar getSVar() {
@@ -74,13 +76,21 @@ public class RegisterArg extends InsnArg implements Named {
 
 	void setSVar(@NotNull SSAVar sVar) {
 		this.sVar = sVar;
-		if (contains(AFlag.IMMUTABLE_TYPE)) {
-			sVar.add(AFlag.IMMUTABLE_TYPE);
+	}
+
+	@Override
+	public void add(AFlag flag) {
+		if (flag == AFlag.IMMUTABLE_TYPE && !type.isTypeKnown()) {
+			throw new JadxRuntimeException("Can't mark unknown type as immutable, type: " + type + ", reg: " + this);
 		}
+		super.add(flag);
 	}
 
 	@Override
 	public String getName() {
+		if (isSuper()) {
+			return SUPER_ARG_NAME;
+		}
 		if (isThis()) {
 			return THIS_ARG_NAME;
 		}
@@ -88,6 +98,10 @@ public class RegisterArg extends InsnArg implements Named {
 			return null;
 		}
 		return sVar.getName();
+	}
+
+	private boolean isSuper() {
+		return contains(AFlag.SUPER);
 	}
 
 	@Override
@@ -116,9 +130,22 @@ public class RegisterArg extends InsnArg implements Named {
 		return duplicate(getRegNum(), sVar);
 	}
 
+	public RegisterArg duplicate(ArgType initType) {
+		return duplicate(getRegNum(), initType, sVar);
+	}
+
+	public RegisterArg duplicate(@Nullable SSAVar ssaVar) {
+		return duplicate(getRegNum(), ssaVar);
+	}
+
 	public RegisterArg duplicate(int regNum, @Nullable SSAVar sVar) {
-		RegisterArg dup = new RegisterArg(regNum, getInitType());
+		return duplicate(regNum, getInitType(), sVar);
+	}
+
+	public RegisterArg duplicate(int regNum, ArgType initType, @Nullable SSAVar sVar) {
+		RegisterArg dup = new RegisterArg(regNum, initType);
 		if (sVar != null) {
+			// only 'set' here, 'assign' or 'use' will binds later
 			dup.setSVar(sVar);
 		}
 		return copyCommonParams(dup);
@@ -137,12 +164,22 @@ public class RegisterArg extends InsnArg implements Named {
 	}
 
 	public boolean sameRegAndSVar(InsnArg arg) {
+		if (this == arg) {
+			return true;
+		}
 		if (!arg.isRegister()) {
 			return false;
 		}
 		RegisterArg reg = (RegisterArg) arg;
 		return regNum == reg.getRegNum()
 				&& Objects.equals(sVar, reg.getSVar());
+	}
+
+	public boolean sameReg(InsnArg arg) {
+		if (!arg.isRegister()) {
+			return false;
+		}
+		return regNum == ((RegisterArg) arg).getRegNum();
 	}
 
 	public boolean sameCodeVar(RegisterArg arg) {
@@ -170,8 +207,7 @@ public class RegisterArg extends InsnArg implements Named {
 	@Override
 	public String toString() {
 		StringBuilder sb = new StringBuilder();
-		sb.append("(r");
-		sb.append(regNum);
+		sb.append("(r").append(regNum);
 		if (sVar != null) {
 			sb.append('v').append(sVar.getVersion());
 		}

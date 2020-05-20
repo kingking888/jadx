@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import jadx.api.impl.InMemoryCodeCache;
+
 public class JadxArgs {
 
 	public static final int DEFAULT_THREADS_COUNT = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
@@ -21,6 +23,8 @@ public class JadxArgs {
 	private File outDir;
 	private File outDirSrc;
 	private File outDirRes;
+
+	private ICodeCache codeCache = new InMemoryCodeCache();
 
 	private int threadsCount = DEFAULT_THREADS_COUNT;
 
@@ -45,6 +49,7 @@ public class JadxArgs {
 	private boolean deobfuscationOn = false;
 	private boolean deobfuscationForceSave = false;
 	private boolean useSourceNameAsClassAlias = false;
+	private boolean parseKotlinMetadata = false;
 
 	private int deobfuscationMinLength = 0;
 	private int deobfuscationMaxLength = Integer.MAX_VALUE;
@@ -226,6 +231,14 @@ public class JadxArgs {
 		this.useSourceNameAsClassAlias = useSourceNameAsClassAlias;
 	}
 
+	public boolean isParseKotlinMetadata() {
+		return parseKotlinMetadata;
+	}
+
+	public void setParseKotlinMetadata(boolean parseKotlinMetadata) {
+		this.parseKotlinMetadata = parseKotlinMetadata;
+	}
+
 	public int getDeobfuscationMinLength() {
 		return deobfuscationMinLength;
 	}
@@ -314,6 +327,14 @@ public class JadxArgs {
 		}
 	}
 
+	public void setRenameFlags(Set<RenameEnum> renameFlags) {
+		this.renameFlags = renameFlags;
+	}
+
+	public Set<RenameEnum> getRenameFlags() {
+		return renameFlags;
+	}
+
 	public OutputFormatEnum getOutputFormat() {
 		return outputFormat;
 	}
@@ -324,6 +345,14 @@ public class JadxArgs {
 
 	public void setOutputFormat(OutputFormatEnum outputFormat) {
 		this.outputFormat = outputFormat;
+	}
+
+	public ICodeCache getCodeCache() {
+		return codeCache;
+	}
+
+	public void setCodeCache(ICodeCache codeCache) {
+		this.codeCache = codeCache;
 	}
 
 	@Override
@@ -343,6 +372,7 @@ public class JadxArgs {
 				+ ", deobfuscationOn=" + deobfuscationOn
 				+ ", deobfuscationForceSave=" + deobfuscationForceSave
 				+ ", useSourceNameAsClassAlias=" + useSourceNameAsClassAlias
+				+ ", parseKotlinMetadata=" + parseKotlinMetadata
 				+ ", deobfuscationMinLength=" + deobfuscationMinLength
 				+ ", deobfuscationMaxLength=" + deobfuscationMaxLength
 				+ ", escapeUnicode=" + escapeUnicode
@@ -352,6 +382,7 @@ public class JadxArgs {
 				+ ", fsCaseSensitive=" + fsCaseSensitive
 				+ ", renameFlags=" + renameFlags
 				+ ", outputFormat=" + outputFormat
+				+ ", codeCache=" + codeCache
 				+ '}';
 	}
 }

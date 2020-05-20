@@ -1,10 +1,10 @@
 package jadx.tests.api;
 
 import java.io.File;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.jetbrains.annotations.Nullable;
 import org.jf.smali.Smali;
@@ -38,6 +38,11 @@ public abstract class SmaliTest extends IntegrationTest {
 		return getClassNodeFromSmaliWithPkg(getTestPkg(), getTestName());
 	}
 
+	protected ClassNode getClassNodeFromSmaliWithClsName(String fullClsName) {
+		return getClassNodeFromSmali(getTestPkg() + File.separatorChar + getTestName(), fullClsName);
+	}
+
+	@Deprecated
 	protected ClassNode getClassNodeFromSmali(String clsName) {
 		return getClassNodeFromSmali(clsName, clsName);
 	}
@@ -81,7 +86,7 @@ public abstract class SmaliTest extends IntegrationTest {
 		File smaliDir = new File(SMALI_TESTS_DIR, smaliFilesDir);
 		String[] smaliFileNames = smaliDir.list((dir, name) -> name.endsWith(".smali"));
 		assertThat("Smali files not found in " + smaliDir, smaliFileNames, notNullValue());
-		return Arrays.stream(smaliFileNames)
+		return Stream.of(smaliFileNames)
 				.map(file -> new File(smaliDir, file))
 				.collect(Collectors.toList());
 	}

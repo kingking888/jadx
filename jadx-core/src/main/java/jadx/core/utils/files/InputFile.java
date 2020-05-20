@@ -14,8 +14,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 import org.jetbrains.annotations.Nullable;
-import org.jf.smali.Smali;
-import org.jf.smali.SmaliOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,10 +21,12 @@ import com.android.dex.Dex;
 import com.android.dex.DexException;
 
 import jadx.core.utils.AsmUtils;
+import jadx.core.utils.SmaliUtils;
 import jadx.core.utils.exceptions.DecodeException;
 import jadx.core.utils.exceptions.JadxException;
 import jadx.core.utils.exceptions.JadxRuntimeException;
 
+import static jadx.core.codegen.CodeWriter.NL;
 import static jadx.core.utils.files.FileUtils.isApkFile;
 import static jadx.core.utils.files.FileUtils.isZipDexFile;
 
@@ -58,9 +58,7 @@ public class InputFile {
 		}
 		if (fileName.endsWith(".smali")) {
 			Path output = FileUtils.createTempFile(".dex");
-			SmaliOptions options = new SmaliOptions();
-			options.outputDexFile = output.toAbsolutePath().toString();
-			Smali.assemble(options, file.getAbsolutePath());
+			SmaliUtils.assembleDex(output.toAbsolutePath().toString(), file.getAbsolutePath());
 			addDexFile(fileName, output);
 			return;
 		}
@@ -139,10 +137,10 @@ public class InputFile {
 						Files.copy(inputStream, jarFile, StandardCopyOption.REPLACE_EXISTING);
 						InputFile tempFile = new InputFile(jarFile.toFile());
 						tempFile.loadFromZip(ext);
-						List<DexFile> dexFiles = tempFile.getDexFiles();
-						if (!dexFiles.isEmpty()) {
-							index += dexFiles.size();
-							this.dexFiles.addAll(dexFiles);
+						List<DexFile> files = tempFile.getDexFiles();
+						if (!files.isEmpty()) {
+							index += files.size();
+							this.dexFiles.addAll(files);
 						}
 					}
 				}
@@ -200,7 +198,7 @@ public class InputFile {
 			}
 			return pathList;
 		} catch (Exception e) {
-			throw new DecodeException("java class to dex conversion error:\n " + e.getMessage(), e);
+			throw new DecodeException("java class to dex conversion error:" + NL + "  " + e.getMessage(), e);
 		} finally {
 			if (j2d.isError()) {
 				LOG.warn("dx message: {}", j2d.getDxErrors());

@@ -2,6 +2,7 @@ package jadx.core.dex.visitors;
 
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -31,8 +32,19 @@ public class InitCodeVariables extends AbstractVisitor {
 		initCodeVars(mth);
 	}
 
+	public static void rerun(MethodNode mth) {
+		for (SSAVar sVar : mth.getSVars()) {
+			sVar.resetTypeAndCodeVar();
+		}
+		initCodeVars(mth);
+	}
+
 	private static void initCodeVars(MethodNode mth) {
-		for (RegisterArg mthArg : mth.getArguments(true)) {
+		RegisterArg thisArg = mth.getThisArg();
+		if (thisArg != null) {
+			initCodeVar(thisArg.getSVar());
+		}
+		for (RegisterArg mthArg : mth.getArgRegs()) {
 			initCodeVar(mthArg.getSVar());
 		}
 		for (SSAVar ssaVar : mth.getSVars()) {
@@ -78,8 +90,8 @@ public class InitCodeVariables extends AbstractVisitor {
 	private static void setCodeVarType(CodeVar codeVar, Set<SSAVar> vars) {
 		if (vars.size() > 1) {
 			List<ArgType> imTypes = vars.stream()
-					.filter(var -> var.contains(AFlag.IMMUTABLE_TYPE))
-					.map(var -> var.getTypeInfo().getType())
+					.map(SSAVar::getImmutableType)
+					.filter(Objects::nonNull)
 					.filter(ArgType::isTypeKnown)
 					.distinct()
 					.collect(Collectors.toList());

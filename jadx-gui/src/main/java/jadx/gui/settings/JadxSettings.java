@@ -23,6 +23,7 @@ import com.beust.jcommander.Parameter;
 
 import jadx.api.JadxArgs;
 import jadx.cli.JadxCLIArgs;
+import jadx.cli.LogHelper;
 import jadx.gui.ui.MainWindow;
 import jadx.gui.ui.codearea.EditorTheme;
 import jadx.gui.utils.FontUtils;
@@ -40,7 +41,8 @@ public class JadxSettings extends JadxCLIArgs {
 
 	static final Set<String> SKIP_FIELDS = new HashSet<>(Arrays.asList(
 			"files", "input", "outDir", "outDirSrc", "outDirRes", "outputFormat",
-			"verbose", "printVersion", "printHelp"));
+			"verbose", "quiet", "logLevel",
+			"printVersion", "printHelp"));
 
 	private Path lastSaveProjectPath = USER_HOME;
 	private Path lastOpenFilePath = USER_HOME;
@@ -277,6 +279,10 @@ public class JadxSettings extends JadxCLIArgs {
 		this.deobfuscationUseSourceNameAsAlias = deobfuscationUseSourceNameAsAlias;
 	}
 
+	public void setDeobfuscationParseKotlinMetadata(boolean deobfuscationParseKotlinMetadata) {
+		this.deobfuscationParseKotlinMetadata = deobfuscationParseKotlinMetadata;
+	}
+
 	public void updateRenameFlag(JadxArgs.RenameEnum flag, boolean enabled) {
 		if (enabled) {
 			renameFlags.add(flag);
@@ -359,6 +365,10 @@ public class JadxSettings extends JadxCLIArgs {
 		}
 	}
 
+	public void setLogLevel(LogHelper.LogLevelEnum level) {
+		this.logLevel = level;
+	}
+
 	public String getEditorThemePath() {
 		return editorThemePath;
 	}
@@ -381,6 +391,7 @@ public class JadxSettings extends JadxCLIArgs {
 		if (fromVersion == 0) {
 			setDeobfuscationMinLength(3);
 			setDeobfuscationUseSourceNameAsAlias(true);
+			setDeobfuscationParseKotlinMetadata(true);
 			setDeobfuscationForceSave(true);
 			setThreadsCount(1);
 			setReplaceConsts(true);

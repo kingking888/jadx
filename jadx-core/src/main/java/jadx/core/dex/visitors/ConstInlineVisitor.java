@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import jadx.core.dex.attributes.AFlag;
+import jadx.core.dex.info.MethodInfo;
+import jadx.core.dex.instructions.BaseInvokeNode;
 import jadx.core.dex.instructions.ConstStringNode;
 import jadx.core.dex.instructions.IndexInsnNode;
 import jadx.core.dex.instructions.InsnType;
@@ -40,6 +42,10 @@ public class ConstInlineVisitor extends AbstractVisitor {
 		if (mth.isNoCode()) {
 			return;
 		}
+		process(mth);
+	}
+
+	public static void process(MethodNode mth) {
 		List<InsnNode> toRemove = new ArrayList<>();
 		for (BlockNode block : mth.getBasicBlocks()) {
 			toRemove.clear();
@@ -76,6 +82,10 @@ public class ConstInlineVisitor extends AbstractVisitor {
 				}
 				return;
 			}
+			// don't inline const values in synchronized statement
+			if (checkForSynchronizeBlock(insn, sVar)) {
+				return;
+			}
 		} else if (insnType == InsnType.CONST_STR) {
 			if (sVar.isUsedInPhi()) {
 				return;
@@ -83,12 +93,19 @@ public class ConstInlineVisitor extends AbstractVisitor {
 			String s = ((ConstStringNode) insn).getString();
 			FieldNode f = mth.getParentClass().getConstField(s);
 			if (f == null) {
-				constArg = InsnArg.wrapArg(insn.copy());
+				InsnNode copy = insn.copyWithoutResult();
+				constArg = InsnArg.wrapArg(copy);
 			} else {
 				InsnNode constGet = new IndexInsnNode(InsnType.SGET, f.getFieldInfo(), 0);
-				constGet.setResult(insn.getResult().duplicate());
 				constArg = InsnArg.wrapArg(constGet);
+				constArg.setType(ArgType.STRING);
 			}
+		} else if (insnType == InsnType.CONST_CLASS) {
+			if (sVar.isUsedInPhi()) {
+				return;
+			}
+			constArg = InsnArg.wrapArg(insn.copyWithoutResult());
+			constArg.setType(ArgType.CLASS);
 		} else {
 			return;
 		}
@@ -98,6 +115,20 @@ public class ConstInlineVisitor extends AbstractVisitor {
 
 		// all check passed, run replace
 		replaceConst(mth, insn, constArg, toRemove);
+	}
+
+	private static boolean checkForSynchronizeBlock(InsnNode insn, SSAVar ssaVar) {
+		for (RegisterArg reg : ssaVar.getUseList()) {
+			InsnNode parentInsn = reg.getParentInsn();
+			if (parentInsn != null) {
+				InsnType insnType = parentInsn.getType();
+				if (insnType == InsnType.MONITOR_ENTER || insnType == InsnType.MONITOR_EXIT) {
+					insn.add(AFlag.DONT_INLINE);
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private static boolean checkForFinallyBlock(SSAVar sVar) {
@@ -175,17 +206,19 @@ public class ConstInlineVisitor extends AbstractVisitor {
 
 		if (constArg.isLiteral()) {
 			long literal = ((LiteralArg) constArg).getLiteral();
-			ArgType argType = arg.getInitType();
+			ArgType argType = arg.getType();
+			if (argType == ArgType.UNKNOWN) {
+				argType = arg.getInitType();
+			}
 			if (argType.isObject() && literal != 0) {
 				argType = ArgType.NARROW_NUMBERS;
 			}
 			LiteralArg litArg = InsnArg.lit(literal, argType);
+			litArg.copyAttributesFrom(constArg);
 			if (!useInsn.replaceArg(arg, litArg)) {
 				return false;
 			}
 			// arg replaced, made some optimizations
-			litArg.setType(arg.getInitType());
-
 			FieldNode fieldNode = null;
 			ArgType litArgType = litArg.getType();
 			if (litArgType.isTypeKnown()) {
@@ -195,6 +228,10 @@ public class ConstInlineVisitor extends AbstractVisitor {
 			}
 			if (fieldNode != null) {
 				litArg.wrapInstruction(mth, new IndexInsnNode(InsnType.SGET, fieldNode.getFieldInfo(), 0));
+			} else {
+				if (needExplicitCast(useInsn, litArg)) {
+					litArg.add(AFlag.EXPLICIT_PRIMITIVE_TYPE);
+				}
 			}
 		} else {
 			if (!useInsn.replaceArg(arg, constArg.duplicate())) {
@@ -205,5 +242,20 @@ public class ConstInlineVisitor extends AbstractVisitor {
 			useInsn.setSourceLine(constInsn.getSourceLine());
 		}
 		return true;
+	}
+
+	private static boolean needExplicitCast(InsnNode insn, LiteralArg arg) {
+		if (insn instanceof BaseInvokeNode) {
+			BaseInvokeNode callInsn = (BaseInvokeNode) insn;
+			MethodInfo callMth = callInsn.getCallMth();
+			int offset = callInsn.getFirstArgOffset();
+			int argIndex = insn.getArgIndex(arg);
+			ArgType argType = callMth.getArgumentsTypes().get(argIndex - offset);
+			if (argType.isPrimitive()) {
+				arg.setType(argType);
+				return argType.equals(ArgType.BYTE);
+			}
+		}
+		return false;
 	}
 }

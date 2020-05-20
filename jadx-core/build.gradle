@@ -4,15 +4,19 @@ dependencies {
 
 	compile files('lib/dx-1.16.jar') // TODO: dx don't support java version > 9 (53)
 
-	compile 'org.ow2.asm:asm:7.1'
-	compile 'org.jetbrains:annotations:17.0.0'
-	compile 'com.google.code.gson:gson:2.8.5'
+	compile 'org.ow2.asm:asm:8.0.1'
+	compile 'org.jetbrains:annotations:19.0.0'
+	compile 'com.google.code.gson:gson:2.8.6'
 
-	compile 'org.smali:baksmali:2.2.7'
-	compile('org.smali:smali:2.2.7') {
+	compile 'org.smali:baksmali:2.4.0'
+	compile('org.smali:smali:2.4.0') {
 		exclude group: 'com.google.guava'
 	}
-	compile 'com.google.guava:guava:28.0-jre'
+	compile 'com.google.guava:guava:29.0-jre'
 
 	testCompile 'org.apache.commons:commons-lang3:3.9'
+}
+
+test {
+	exclude '**/tmp/*'
 }

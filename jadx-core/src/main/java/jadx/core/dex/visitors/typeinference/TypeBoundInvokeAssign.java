@@ -37,7 +37,7 @@ public final class TypeBoundInvokeAssign implements ITypeBoundDynamic {
 	}
 
 	private ArgType getReturnType(ArgType instanceType) {
-		ArgType resultGeneric = TypeUpdate.getResultGeneric(root, instanceType, genericReturnType);
+		ArgType resultGeneric = root.getTypeUtils().replaceClassGenerics(instanceType, genericReturnType);
 		if (resultGeneric != null) {
 			return resultGeneric;
 		}

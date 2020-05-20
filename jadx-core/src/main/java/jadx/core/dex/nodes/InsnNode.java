@@ -10,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.android.dx.io.instructions.DecodedInstruction;
 
+import jadx.core.codegen.CodeWriter;
 import jadx.core.dex.attributes.AFlag;
 import jadx.core.dex.attributes.nodes.LineAttrNode;
 import jadx.core.dex.instructions.InsnType;
@@ -38,6 +39,9 @@ public class InsnNode extends LineAttrNode {
 		this.insnType = type;
 		this.arguments = args;
 		this.offset = -1;
+		for (InsnArg arg : args) {
+			attachArg(arg);
+		}
 	}
 
 	public static InsnNode wrapArg(InsnArg arg) {
@@ -47,6 +51,7 @@ public class InsnNode extends LineAttrNode {
 	}
 
 	public void setResult(@Nullable RegisterArg res) {
+		this.result = res;
 		if (res != null) {
 			res.setParentInsn(this);
 			SSAVar ssaVar = res.getSVar();
@@ -54,7 +59,6 @@ public class InsnNode extends LineAttrNode {
 				ssaVar.setAssign(res);
 			}
 		}
-		this.result = res;
 	}
 
 	public void addArg(InsnArg arg) {
@@ -67,7 +71,7 @@ public class InsnNode extends LineAttrNode {
 		attachArg(arg);
 	}
 
-	private void attachArg(InsnArg arg) {
+	protected void attachArg(InsnArg arg) {
 		arg.setParentInsn(this);
 		if (arg.isRegister()) {
 			RegisterArg reg = (RegisterArg) arg;
@@ -98,10 +102,24 @@ public class InsnNode extends LineAttrNode {
 		return arguments.get(n);
 	}
 
-	public boolean containsArg(RegisterArg arg) {
+	public boolean containsArg(InsnArg arg) {
+		if (getArgsCount() == 0) {
+			return false;
+		}
 		for (InsnArg a : arguments) {
-			if (a == arg
-					|| a.isRegister() && ((RegisterArg) a).getRegNum() == arg.getRegNum()) {
+			if (a == arg) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public boolean containsVar(RegisterArg arg) {
+		if (getArgsCount() == 0) {
+			return false;
+		}
+		for (InsnArg insnArg : arguments) {
+			if (insnArg == arg || arg.sameRegAndSVar(insnArg)) {
 				return true;
 			}
 		}
@@ -136,14 +154,14 @@ public class InsnNode extends LineAttrNode {
 		return true;
 	}
 
-	protected InsnArg removeArg(int index) {
+	public InsnArg removeArg(int index) {
 		InsnArg arg = arguments.get(index);
 		arguments.remove(index);
 		InsnRemover.unbindArgUsage(null, arg);
 		return arg;
 	}
 
-	protected int getArgIndex(InsnArg arg) {
+	public int getArgIndex(InsnArg arg) {
 		int count = getArgsCount();
 		for (int i = 0; i < count; i++) {
 			if (arg == arguments.get(i)) {
@@ -192,6 +210,17 @@ public class InsnNode extends LineAttrNode {
 			case CONST:
 			case CONST_STR:
 			case CONST_CLASS:
+				return true;
+
+			default:
+				return false;
+		}
+	}
+
+	public boolean canRemoveResult() {
+		switch (getType()) {
+			case INVOKE:
+			case CONSTRUCTOR:
 				return true;
 
 			default:
@@ -254,28 +283,13 @@ public class InsnNode extends LineAttrNode {
 		return true;
 	}
 
-	@Override
-	public String toString() {
-		return InsnUtils.formatOffset(offset) + ": "
-				+ InsnUtils.insnTypeToString(insnType)
-				+ (result == null ? "" : result + " = ")
-				+ Utils.listToString(arguments);
-	}
-
-	/**
-	 * Compare instruction only by identity.
-	 */
-	@Override
-	public final int hashCode() {
-		return super.hashCode();
-	}
-
-	/**
-	 * Compare instruction only by identity.
-	 */
-	@Override
-	public final boolean equals(Object obj) {
-		return super.equals(obj);
+	public boolean containsWrappedInsn() {
+		for (InsnArg arg : this.getArguments()) {
+			if (arg.isInsnWrap()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -323,15 +337,9 @@ public class InsnNode extends LineAttrNode {
 	}
 
 	protected final <T extends InsnNode> T copyCommonParams(T copy) {
-		copy.setResult(result);
 		if (copy.getArgsCount() == 0) {
 			for (InsnArg arg : this.getArguments()) {
-				if (arg.isInsnWrap()) {
-					InsnNode wrapInsn = ((InsnWrapArg) arg).getWrapInsn();
-					copy.addArg(InsnArg.wrapArg(wrapInsn.copy()));
-				} else {
-					copy.addArg(arg);
-				}
+				copy.addArg(arg.duplicate());
 			}
 		}
 		copy.copyAttributesFrom(this);
@@ -342,12 +350,87 @@ public class InsnNode extends LineAttrNode {
 
 	/**
 	 * Make copy of InsnNode object.
+	 * <p>
+	 * NOTE: can't copy instruction with result argument
+	 * (SSA variable can't be used in two different assigns).
+	 * <p>
+	 * Prefer use next methods:
+	 * <ul>
+	 * <li>{@link #copyWithoutResult()} to explicitly state that result not needed
+	 * <li>{@link #copy(RegisterArg)} to provide new result arg
+	 * <li>{@link #copyWithNewSsaVar(MethodNode)} to make new SSA variable for result arg
+	 * </ul>
+	 * <p>
 	 */
 	public InsnNode copy() {
 		if (this.getClass() != InsnNode.class) {
 			throw new JadxRuntimeException("Copy method not implemented in insn class " + this.getClass().getSimpleName());
 		}
 		return copyCommonParams(new InsnNode(insnType, getArgsCount()));
+	}
+
+	/**
+	 * See {@link #copy()}
+	 */
+	@SuppressWarnings("unchecked")
+	public <T extends InsnNode> T copyWithoutResult() {
+		return (T) copy();
+	}
+
+	public InsnNode copyWithoutSsa() {
+		InsnNode copy = copyWithoutResult();
+		if (result != null) {
+			if (result.getSVar() == null) {
+				copy.setResult(result.duplicate());
+			} else {
+				throw new JadxRuntimeException("Can't copy if SSA var is set");
+			}
+		}
+		return copy;
+	}
+
+	/**
+	 * See {@link #copy()}
+	 */
+	public InsnNode copy(RegisterArg newReturnArg) {
+		InsnNode copy = copy();
+		copy.setResult(newReturnArg);
+		return copy;
+	}
+
+	/**
+	 * See {@link #copy()}
+	 */
+	public InsnNode copyWithNewSsaVar(MethodNode mth) {
+		RegisterArg result = getResult();
+		if (result == null) {
+			throw new JadxRuntimeException("Result in null");
+		}
+		int regNum = result.getRegNum();
+		RegisterArg resDupArg = result.duplicate(regNum, null);
+		mth.makeNewSVar(resDupArg);
+		return copy(resDupArg);
+	}
+
+	/**
+	 * Fix SSAVar info in register arguments.
+	 * Must be used after altering instructions.
+	 */
+	public void rebindArgs() {
+		RegisterArg resArg = getResult();
+		if (resArg != null) {
+			resArg.getSVar().setAssign(resArg);
+		}
+		for (InsnArg arg : getArguments()) {
+			if (arg instanceof RegisterArg) {
+				RegisterArg reg = (RegisterArg) arg;
+				SSAVar ssaVar = reg.getSVar();
+				ssaVar.use(reg);
+				ssaVar.updateUsedInPhiList();
+			} else if (arg instanceof InsnWrapArg) {
+				((InsnWrapArg) arg).getWrapInsn().rebindArgs();
+			}
+		}
 	}
 
 	public boolean canThrowException() {
@@ -368,5 +451,46 @@ public class InsnNode extends LineAttrNode {
 			default:
 				return true;
 		}
+	}
+
+	/**
+	 * Compare instruction only by identity.
+	 */
+	@Override
+	public final int hashCode() {
+		return super.hashCode();
+	}
+
+	/**
+	 * Compare instruction only by identity.
+	 */
+	@Override
+	public final boolean equals(Object obj) {
+		return super.equals(obj);
+	}
+
+	protected void appendArgs(StringBuilder sb) {
+		String argsStr = Utils.listToString(arguments);
+		if (argsStr.length() < 120) {
+			sb.append(argsStr);
+		} else {
+			// wrap args
+			String separator = CodeWriter.NL + "  ";
+			sb.append(separator).append(Utils.listToString(arguments, separator));
+			sb.append(CodeWriter.NL);
+		}
+	}
+
+	@Override
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		sb.append(InsnUtils.formatOffset(offset));
+		sb.append(": ");
+		sb.append(InsnUtils.insnTypeToString(insnType));
+		if (result != null) {
+			sb.append(result).append(" = ");
+		}
+		appendArgs(sb);
+		return sb.toString();
 	}
 }
